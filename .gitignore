@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 虚拟环境
+venv/
+.venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# 运行时产物
+logs/
+output/
+backend/data/
+*.log
+
+# 第三方克隆仓库（需按 README 重新 clone，勿提交）
+services/comfyui/ComfyUI/
+services/tts/CosyVoice/
+
+# 系统文件
+.DS_Store

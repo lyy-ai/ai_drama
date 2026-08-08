@@ -16,7 +16,6 @@ build_venv() {
 }
 
 build_venv "$ROOT/services/comfyui"
-build_venv "$ROOT/services/tts"
 build_venv "$ROOT/services/video"
 
 echo "完成。启动: bash $ROOT/scripts/start_all.sh"

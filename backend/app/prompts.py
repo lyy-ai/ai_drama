@@ -7,8 +7,7 @@ JSON 结构：
   "characters": [
     {"name": "角色名", "gender": "male/female",
      "appearance": "英文外貌描述词组，用于AI绘图，包含发型/服装/年龄/特征，越具体越好",
-     "personality": "性格",
-     "voice": "中文女 或 中文男"}
+     "personality": "性格"}
   ],
   "episodes": [
     {"index": 1, "summary": "本集梗概",
@@ -28,7 +27,7 @@ JSON 结构：
 
 要求：
 1. 角色数量 2-4 个，每个角色的 appearance 一旦确定，在所有镜头的 first_frame_prompt 中必须逐字复用，保证人物形象一致。
-2. 每个镜头台词 0-2 句，单句不超过 30 字，口语化、有冲突感。
+2. 每个镜头台词 0-2 句，单句不超过 20 字，口语化、有冲突感（台词将由视频模型直接生成语音，过长会被截断）。
 3. video_prompt 突出"动作"和"镜头运动"（如推近、环绕、跟拍），不要写台词。
 4. first_frame_prompt 必须是英文，包含画质词（masterpiece, best quality, cinematic lighting）。
 5. 剧情要有钩子：开头3秒吸引人，结尾留悬念。

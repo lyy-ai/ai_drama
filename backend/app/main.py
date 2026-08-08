@@ -117,13 +117,8 @@ async def regen_shot(pid: str, ep_idx: int, shot_id: int, stage: str):
     elif stage == "video":
         rel = await pipeline.gen_video_for_shot(pid, script, ep, shot)
         status["shots"][key]["video"] = "done"
-    elif stage == "audio":
-        r = await pipeline.gen_audio_for_shot(pid, script, ep, shot)
-        shot["_audio"] = r
-        status["shots"][key]["audio"] = "done"
-        rel = r.get("audio")
     else:
-        raise HTTPException(400, "stage must be keyframe/video/audio")
+        raise HTTPException(400, "stage must be keyframe/video")
     db.save_script(pid, script)
     return {"ok": True, "result": rel}
 

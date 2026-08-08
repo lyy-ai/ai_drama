@@ -53,7 +53,7 @@ async def run_script_task(pid, synopsis, style, episodes, shots_per_episode):
         validate_script(script)
         script["_status"] = {
             "characters": {c["name"]: "pending" for c in script["characters"]},
-            "shots": {shot_key(ep, s): {"keyframe": "pending", "video": "pending", "audio": "pending"}
+            "shots": {shot_key(ep, s): {"keyframe": "pending", "video": "pending"}
                       for ep, s in all_shots(script)},
         }
         db.save_script(pid, script)
@@ -72,10 +72,7 @@ def validate_script(script):
     assert isinstance(script.get("episodes"), list) and script["episodes"], "episodes missing"
     names = {c["name"] for c in script["characters"]}
     for c in script["characters"]:
-        c.setdefault("voice", "中文女" if c.get("gender") == "female" else "中文男")
         c.setdefault("appearance", c["name"])
-        if c["voice"] not in ("中文女", "中文男"):
-            c["voice"] = "中文女" if c.get("gender") == "female" else "中文男"
     for ep, shot in all_shots(script):
         shot.setdefault("duration", 4)
         shot.setdefault("dialogue", [])
@@ -113,31 +110,29 @@ async def gen_keyframe(pid, script, ep, shot):
     return f"{pid}/keyframes/{key}.png"
 
 
-async def gen_audio_for_shot(pid, script, ep, shot):
-    key = shot_key(ep, shot)
+def h3_prompt(script, shot):
+    """video_prompt + 台词语音指令（H3 原生音画同步）"""
     chars = {c["name"]: c for c in script["characters"]}
-    wavs = []
-    lines = []
-    for k, d in enumerate(shot.get("dialogue", [])):
-        spk = chars.get(d["character"], {}).get("voice", "中文女")
-        jid = f"{pid}_{key}_{k}"
-        r = await clients.tts_generate(d["line"], spk, jid, emotion=None)
-        wavs.append(os.path.join(OUT_ROOT, r["audio"]))
-        lines.append({"character": d["character"], "line": d["line"], "duration": r["duration"]})
-    if wavs:
-        merged = os.path.join(OUT_ROOT, "audio", f"{pid}_{key}.wav")
-        await assemble.concat_wavs(wavs, merged)
-        dur = await assemble.ffprobe_duration(merged)
-        return {"audio": f"audio/{pid}_{key}.wav", "duration": dur, "lines": lines}
-    return {"audio": None, "duration": 0.0, "lines": []}
+    speech = []
+    for d in shot.get("dialogue", []):
+        gender = chars.get(d["character"], {}).get("gender")
+        voice = "女声" if gender == "female" else "男声"
+        emotion = d.get("emotion", "平静")
+        speech.append(f'{d["character"]}用{emotion}的{voice}说："{d["line"]}"')
+    prompt = shot["video_prompt"].rstrip("。")
+    if speech:
+        prompt += "。" + "；".join(speech)
+    return prompt
 
 
 async def gen_video_for_shot(pid, script, ep, shot, progress_cb=None):
     key = shot_key(ep, shot)
     seed = abs(hash(pid + key + "video")) % (2**31)
+    kf = os.path.join(OUT_ROOT, pid, "keyframes", f"{key}.png")
     video_rel = await clients.video_generate(
-        shot["video_prompt"], f"{pid}_{key}", seed=seed,
-        size=VIDEO_SIZE, frame_num=FRAME_NUM, progress_cb=progress_cb)
+        h3_prompt(script, shot), f"{pid}_{key}", seed=seed,
+        size=VIDEO_SIZE, frame_num=FRAME_NUM,
+        keyframe=kf if os.path.exists(kf) else None, progress_cb=progress_cb)
     return video_rel
 
 
@@ -180,25 +175,7 @@ async def run_production(pid):
             db.save_script(pid, script)
             await broadcast(pid, {"type": "shot", "shot": key, "stage": "keyframe", "status": "done"})
 
-        # S3 audios
-        db.update_project(pid, stage="audios")
-        for ep, shot in all_shots(script):
-            key = shot_key(ep, shot)
-            if status["shots"][key]["audio"] == "done":
-                continue
-            await broadcast(pid, {"type": "shot", "shot": key, "stage": "audio", "status": "running"})
-            try:
-                r = await gen_audio_for_shot(pid, script, ep, shot)
-                shot["_audio"] = r
-                status["shots"][key]["audio"] = "done"
-            except Exception as e:
-                status["shots"][key]["audio"] = "failed"
-                await broadcast(pid, {"type": "shot", "shot": key, "stage": "audio", "status": "failed", "error": str(e)})
-                raise
-            db.save_script(pid, script)
-            await broadcast(pid, {"type": "shot", "shot": key, "stage": "audio", "status": "done"})
-
-        # S4 videos
+        # S3 videos（H3 原生音画同步，无需单独配音）
         db.update_project(pid, stage="videos")
         await clients.comfy_free()
         for ep, shot in all_shots(script):
@@ -220,31 +197,32 @@ async def run_production(pid):
             db.save_script(pid, script)
             await broadcast(pid, {"type": "shot", "shot": key, "stage": "video", "status": "done"})
 
-        # S5 assemble
+        # S4 assemble（视频已自带同步音频，直接拼接 + 烧字幕）
         db.update_project(pid, stage="assembling")
         await broadcast(pid, {"type": "stage", "stage": "assemble", "status": "running"})
         ep_files = []
         for ep in script["episodes"]:
-            merged_files = []
+            clip_files = []
             subtitles = []
             t = 0.0
             for shot in ep["shots"]:
                 key = shot_key(ep, shot)
                 clip = os.path.join(OUT_ROOT, "video_clips", f"{pid}_{key}.mp4")
-                audio_rel = shot.get("_audio", {}).get("audio")
-                audio = os.path.join(OUT_ROOT, audio_rel) if audio_rel else None
-                merged = os.path.join(pid_dir(pid), "shots", f"{key}.mp4")
-                dur = await assemble.merge_shot(clip, audio, merged)
-                tt = 0.0
-                for line in shot.get("_audio", {}).get("lines", []):
-                    subtitles.append({"start": t + tt + 0.2,
-                                      "end": t + tt + 0.2 + line["duration"],
-                                      "text": f"{line['character']}：{line['line']}"})
-                    tt += line["duration"] + 0.25
+                dur = await assemble.ffprobe_duration(clip)
+                lines = shot.get("dialogue", [])
+                if lines:
+                    weights = [max(len(d["line"]), 1) for d in lines]
+                    total = sum(weights)
+                    tt = t + 0.3
+                    for d, w in zip(lines, weights):
+                        seg = max((dur - 0.6) * w / total, 0.8)
+                        subtitles.append({"start": tt, "end": min(tt + seg, t + dur),
+                                          "text": f"{d['character']}：{d['line']}"})
+                        tt += seg
                 t += dur
-                merged_files.append(merged)
+                clip_files.append(clip)
             ep_out = os.path.join(pid_dir(pid), f"episode_{ep['index']}.mp4")
-            await assemble.assemble_episode(merged_files, subtitles, ep_out)
+            await assemble.assemble_episode(clip_files, subtitles, ep_out)
             ep_files.append(ep_out)
         final = os.path.join(pid_dir(pid), "final.mp4")
         await assemble.concat_episodes(ep_files, final)

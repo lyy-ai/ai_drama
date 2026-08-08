@@ -21,49 +21,6 @@ async def ffprobe_duration(path: str) -> float:
     return float(out.decode().strip())
 
 
-async def concat_wavs(wavs: list[str], out: str, gap: float = 0.25, head: float = 0.2):
-    parts = []
-    for w in wavs:
-        parts += ["-i", w]
-    n = len(wavs)
-    sil = f"anullsrc=r=24000:cl=mono"
-    fc = []
-    labels = []
-    idx = 0
-    fc.append(f"{sil},atrim=duration={head}[s0]")
-    labels.append("[s0]")
-    for i in range(n):
-        fc.append(f"[{idx}:a]aresample=24000[a{idx}]")
-        labels.append(f"[a{idx}]")
-        idx += 1
-        if i < n - 1:
-            g = f"g{i}"
-            fc.append(f"{sil},atrim=duration={gap}[{g}]")
-            labels.append(f"[{g}]")
-    fc.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[out]")
-    await run(["ffmpeg", "-y", *parts, "-filter_complex", ";".join(fc),
-               "-map", "[out]", out])
-
-
-async def merge_shot(clip: str, audio: str | None, out: str, width=480, height=832):
-    dv = await ffprobe_duration(clip)
-    da = await ffprobe_duration(audio) if audio else 0.0
-    dur = max(dv, da, 1.0)
-    inputs = ["-i", clip]
-    fc = [f"[0:v]tpad=stop_mode=clone:stop_duration={max(dur - dv, 0):.3f},setsar=1[v]"]
-    if audio:
-        inputs += ["-i", audio]
-        fc.append(f"[1:a]apad=whole_dur={dur:.3f},aresample=24000[a]")
-        amap = ["-map", "[v]", "-map", "[a]"]
-    else:
-        fc.append(f"anullsrc=r=24000:cl=mono,atrim=duration={dur:.3f}[a]")
-        amap = ["-map", "[v]", "-map", "[a]"]
-    await run(["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(fc),
-               *amap, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "16",
-               "-c:a", "aac", "-b:a", "96k", "-t", f"{dur:.3f}", out])
-    return dur
-
-
 def srt_time(t: float) -> str:
     h = int(t // 3600); t -= h * 3600
     m = int(t // 60); t -= m * 60

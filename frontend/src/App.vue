@@ -73,14 +73,14 @@ const health = ref({})
 const creating = ref(false)
 const error = ref('')
 const styles = ['都市', '古风', '悬疑', '科幻', '写实', '动漫']
-const svcNames = { llm: '剧本', comfy: '绘图', video: '视频', tts: '配音' }
+const svcNames = { llm: '剧本', comfy: '绘图', video: '视频' }
 const form = ref({ synopsis: '', style: '都市', episodes: 1, shots_per_episode: 6, auto_produce: false })
 
 function statusText(s) {
   return { created: '已创建', running: '进行中', script_done: '剧本完成', done: '已完成', failed: '失败' }[s] || s
 }
 function stageText(s) {
-  return { script: '剧本', characters: '角色', keyframes: '分镜', audios: '配音', videos: '视频', assembling: '合成', done: '完成' }[s] || s || ''
+  return { script: '剧本', characters: '角色', keyframes: '分镜', videos: '视频', assembling: '合成', done: '完成' }[s] || s || ''
 }
 function statusClass(s) {
   return s === 'done' ? 'ok' : s === 'failed' ? 'bad' : s === 'running' ? 'run' : 'info'

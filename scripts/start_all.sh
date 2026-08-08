@@ -1,6 +1,6 @@
 #!/bin/bash
 # AI 短剧平台一键启动脚本（setsid 启动，脱离终端进程组）
-# 用法: bash /data/liyangyang/ai_drama/scripts/start_all.sh [llm|comfy|video|tts|backend|frontend|all]
+# 用法: bash scripts/start_all.sh [llm|comfy|video|backend|frontend|all]
 
 ROOT=/data/liyangyang/ai_drama
 QWEN_ENV=/data/liyangyang/qwen35_env
@@ -35,14 +35,6 @@ start_video() {
     > $LOGS/video_service.log 2>&1 < /dev/null &
 }
 
-start_tts() {
-  echo "[start] CosyVoice 配音服务 127.0.0.1:10049  GPU1"
-  cd $ROOT/services/tts
-  setsid env CUDA_VISIBLE_DEVICES=1 \
-    $ROOT/services/tts/venv/bin/uvicorn server:app --host 127.0.0.1 --port 10049 \
-    > $LOGS/tts_service.log 2>&1 < /dev/null &
-}
-
 start_backend() {
   echo "[start] 编排后端 0.0.0.0:10046"
   cd $ROOT/backend
@@ -60,11 +52,10 @@ case "${1:-all}" in
   llm) start_llm ;;
   comfy) start_comfy ;;
   video) start_video ;;
-  tts) start_tts ;;
   backend) start_backend ;;
   frontend) start_frontend ;;
   all)
-    start_llm; start_comfy; start_video; start_tts; start_backend; start_frontend
+    start_llm; start_comfy; start_video; start_backend; start_frontend
     echo "全部服务已后台启动，日志在 $LOGS/"
     echo "LLM/TTS 首次加载模型需 1-3 分钟，可用 bash scripts/status.sh 查看健康状态"
     ;;

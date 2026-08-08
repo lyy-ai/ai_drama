@@ -9,7 +9,6 @@ import httpx
 LLM_URL = "http://127.0.0.1:10048/v1/chat/completions"
 COMFY_URL = "http://127.0.0.1:10047"
 VIDEO_URL = "http://127.0.0.1:10050"
-TTS_URL = "http://127.0.0.1:10049"
 
 WF_PATH = "/data/liyangyang/ai_drama/workflows/sdxl_txt2img.json"
 OUT_ROOT = "/data/liyangyang/ai_drama/output"
@@ -84,11 +83,12 @@ async def comfy_txt2img(prompt_en: str, seed: int, prefix: str, timeout: float =
 
 
 async def video_generate(prompt: str, job_id: str, seed: int = 42, size: str = "480*832",
-                         frame_num: int = 65, timeout: float = 3600.0, progress_cb=None):
+                         frame_num: int = 65, keyframe: str | None = None,
+                         timeout: float = 3600.0, progress_cb=None):
     async with httpx.AsyncClient(timeout=60) as cli:
         r = await cli.post(f"{VIDEO_URL}/generate", json={
             "prompt": prompt, "job_id": job_id, "seed": seed,
-            "size": size, "frame_num": frame_num})
+            "size": size, "frame_num": frame_num, "keyframe": keyframe})
         r.raise_for_status()
         t0 = asyncio.get_event_loop().time()
         errors = 0
@@ -113,23 +113,6 @@ async def video_generate(prompt: str, job_id: str, seed: int = 42, size: str = "
                 raise TimeoutError("video timeout")
 
 
-async def tts_generate(text: str, spk: str, job_id: str, speed: float = 1.0,
-                       emotion: str | None = None, retries: int = 2):
-    last = None
-    for _ in range(retries):
-        try:
-            async with httpx.AsyncClient(timeout=120) as cli:
-                r = await cli.post(f"{TTS_URL}/tts", json={
-                    "text": text, "spk": spk, "job_id": job_id,
-                    "speed": speed, "emotion": emotion})
-                r.raise_for_status()
-                return r.json()
-        except Exception as e:
-            last = e
-            await asyncio.sleep(1)
-    raise RuntimeError(f"tts failed: {last}")
-
-
 async def comfy_free():
     """释放 ComfyUI 显存（视频生成前调用）"""
     try:
@@ -144,8 +127,7 @@ async def service_health():
     async with httpx.AsyncClient(timeout=5) as cli:
         for name, url in [("llm", "http://127.0.0.1:10048/v1/models"),
                           ("comfy", f"{COMFY_URL}/system_stats"),
-                          ("video", f"{VIDEO_URL}/health"),
-                          ("tts", f"{TTS_URL}/health")]:
+                          ("video", f"{VIDEO_URL}/health")]:
             try:
                 r = await cli.get(url)
                 out[name] = r.status_code == 200

@@ -12,18 +12,17 @@
 | 10046 | 编排后端 FastAPI | 0.0.0.0 | 流水线引擎 / SQLite / WebSocket 进度 |
 | 10047 | ComfyUI (SDXL) | 127.0.0.1 | 角色定妆照 + 分镜首帧（GPU1） |
 | 10048 | vLLM Qwen3.5-9B | 127.0.0.1 | 剧本生成（GPU1，常驻 ~21G） |
-| 10049 | CosyVoice-300M-SFT | 127.0.0.1 | 多音色配音（GPU1） |
-| 10050 | MiniMax-H3 (NF4) | 127.0.0.1 | 视频片段生成，音画同步（**GPU0**，显存自动管理，最低 8G） |
+| 10050 | MiniMax-H3 (NF4) | 127.0.0.1 | 视频+同步语音生成（**GPU0**，显存自动管理，最低 8G） |
 
-> 仅 10045/10046 对公网开放；10047-10050 仅本机内部调用（无鉴权，勿对外映射）。
+> 仅 10045/10046 对公网开放；10047/10048/10050 仅本机内部调用（无鉴权，勿对外映射）。
 
 ## 流水线
 
-梗概 → S0 LLM 结构化剧本(JSON) → S1 SDXL 角色定妆照 → S2 SDXL 分镜首帧 → S3 CosyVoice 台词配音 → S4 MiniMax-H3 视频片段 → S5 FFmpeg 音画对齐/字幕/拼接 → 成片
+梗概 → S0 LLM 结构化剧本(JSON) → S1 SDXL 角色定妆照 → S2 SDXL 分镜首帧 → S3 MiniMax-H3 视频片段（原生音画同步，分镜首帧作首帧约束，台词写入 prompt 直接生成对口型语音）→ S4 FFmpeg 拼接/烧字幕 → 成片
 
-- 剧本生成后可人工编辑（台词/提示词/角色音色），也可全自动一键出片
-- 支持单镜头重生成（重绘图 / 重视频 / 重配音）、断点续跑
-- 视频阶段前自动调用 ComfyUI `/free` 释放显存，避免与 vLLM 争抢
+- 剧本生成后可人工编辑（台词/提示词），也可全自动一键出片
+- 支持单镜头重生成（重绘图 / 重视频）、断点续跑
+- 视频阶段前自动调用 ComfyUI `/free` 释放显存
 
 ## 快速开始
 
@@ -31,7 +30,7 @@
 # 启动全部服务
 bash /data/liyangyang/ai_drama/scripts/start_all.sh
 
-# 查看健康状态（llm/comfy/video/tts 应为全 true）
+# 查看健康状态（llm/comfy/video 应为全 true）
 bash /data/liyangyang/ai_drama/scripts/status.sh
 
 # 停止全部
@@ -61,7 +60,6 @@ curl -X POST "http://36.212.51.4:10046/api/projects/{pid}/shots/1/2/regen?stage=
 |---|---|
 | 剧本（1集6镜头） | ~1-2 分钟 |
 | 角色/分镜图（每张） | ~10 秒 |
-| 配音（每句） | ~5 秒 |
 | 视频片段（每个 ~3.8s/90帧/50步） | 视显存余量 ~15-30 分钟（disk offload） |
 | 1 集 6 镜头成片 | ~1 小时 |
 
@@ -71,7 +69,6 @@ curl -X POST "http://36.212.51.4:10046/api/projects/{pid}/shots/1/2/regen?stage=
 |---|---|
 | LLM / 视频服务 / 后端 | 复用 `/data/liyangyang/qwen35_env`（已含 vllm/torch2.11） |
 | ComfyUI | 源码已 vendored 于 `services/comfyui/ComfyUI`，venv 用 `scripts/setup_env.sh` 重建 |
-| CosyVoice | 源码已 vendored 于 `services/tts/CosyVoice`，venv 同上（`setuptools<81` 已固定在 requirements 中） |
 | 前端 | node18 + vite 构建，python http.server 托管 dist |
 
 ### 全新克隆后的初始化
@@ -93,14 +90,13 @@ bash /data/liyangyang/ai_drama/scripts/start_all.sh
 
 > venv 不入库（单文件超 GitHub 100MB 限制且路径写死）；`requirements.txt` 已锁定全部依赖版本，重建结果与原环境一致。
 
-模型：`/data/liyangyang/models/` 下 `MiniMax-H3-NF4`（视频，FL2VA 四件套）、`MiniMax-H3`（仅 FL2VA/processor 配置）、`sdxl`、`CosyVoice-300M-SFT`、`Qwen3-0.6B`，全部经 ModelScope 下载。旧 `Wan2.1-T2V-1.3B` 已下线（服务备份为 `services/video/server_wan21.py`）。
+模型：`/data/liyangyang/models/` 下 `MiniMax-H3-NF4`（视频+语音，FL2VA 四件套）、`MiniMax-H3`（仅 FL2VA/processor 配置）、`sdxl`、`Qwen3-0.6B`，全部经 ModelScope 下载。旧 `Wan2.1-T2V-1.3B` 已下线（服务备份为 `services/video/server_wan21.py`）。
 
 ## 已知注意事项
 
-1. **GPU 显存分配**：GPU1 被 vLLM 常驻占 21G，ComfyUI/CosyVoice 按需加载（各 ~5-8G）可与 vLLM 共存；Wan2.1 峰值 ~10G 安排在 GPU0（与 veyforge/isaac 错峰，余量 14G）。若 GPU0 被占满，需把 video 服务 env 改回 GPU1 并先停 ComfyUI。
+1. **GPU 显存分配**：GPU1 上 vLLM 与 ComfyUI 共存；MiniMax-H3 在 GPU0，显存自动管理（最低 8G，超出部分 offload 到内存/磁盘，速度随余量变化）。
 2. **vLLM 启动参数**：`VLLM_USE_FLASHINFER_SAMPLER=0`（flashinfer 与 CUDA13 cub 编译冲突）、`--enforce-eager`（省显存）、`LD_LIBRARY_PATH` 指向 nvidia/cu13/lib。
-3. **MiniMax-H3 推理**：DiffSynth-Studio（PyPI `diffsynth==2.1.0`）+ bitsandbytes NF4，disk offload，帧数自动对齐 17n+5、24fps 出片；mp4 自带音轨在 S5 被丢弃，仍用 CosyVoice 配音。
-4. CosyVoice2-0.5B 无内置音色，本平台改用 CosyVoice-300M-SFT（内置 中文男/中文女 等 7 个音色）。
+3. **MiniMax-H3 推理**：DiffSynth-Studio（PyPI `diffsynth==2.1.0`）+ bitsandbytes NF4，disk offload，帧数自动对齐 17n+5、24fps 出片；台词按 `角色用{情绪}的{男/女声}说："..."` 写入 prompt，生成对口型语音；字幕按台词字数比例估算时间轴。
 5. 中文字幕依赖系统字体 Droid Sans Fallback（已装）。
 
 ## 二期路线

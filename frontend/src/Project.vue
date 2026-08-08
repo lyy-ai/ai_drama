@@ -28,7 +28,7 @@
             <div v-for="c in script.characters" :key="c.name" class="char-card">
               <img v-if="charImg(c.name)" :src="charImg(c.name)" />
               <div v-else style="width:150px;height:263px;line-height:263px;background:#12141d;border-radius:8px">未生成</div>
-              <div class="name">{{ c.name }} <span class="muted">{{ c.voice }}</span></div>
+              <div class="name">{{ c.name }} <span class="muted">{{ c.gender === 'female' ? '女声' : '男声' }}</span></div>
               <div class="desc">{{ c.personality }}</div>
               <button class="btn small gray" style="margin-top:4px" @click="regenChar(c.name)">重绘定妆照</button>
             </div>
@@ -78,13 +78,11 @@
             <div class="st">
               <span class="badge" :class="badgeCls(cell.st.keyframe)">图</span>
               <span class="badge" :class="badgeCls(cell.st.video)">视</span>
-              <span class="badge" :class="badgeCls(cell.st.audio)">音</span>
             </div>
             <div v-if="cell.progress" class="bar"><div :style="{ width: cell.progress + '%' }"></div></div>
             <div style="margin-top:6px">
               <button class="btn small gray" @click="regenShot(cell, 'keyframe')">重图</button>
               <button class="btn small gray" @click="regenShot(cell, 'video')">重视频</button>
-              <button class="btn small gray" @click="regenShot(cell, 'audio')">重配音</button>
             </div>
           </div>
         </div>

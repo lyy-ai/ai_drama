@@ -30,6 +30,7 @@ class GenReq(BaseModel):
     seed: int = 42
     steps: int = 50
     job_id: str | None = None
+    keyframe: str | None = None
 
 
 def snap_frames(frame_num: int) -> int:
@@ -86,6 +87,11 @@ def worker():
             w, h = (int(x) for x in req.size.replace("x", "*").split("*"))
             frames = snap_frames(req.frame_num)
             jobs[job_id]["total_steps"] = req.steps
+            kwargs = {}
+            if req.keyframe and os.path.exists(req.keyframe):
+                from PIL import Image
+                kwargs["keyframes"] = [Image.open(req.keyframe)]
+                kwargs["keyframe_indices"] = [0]
             video, audio = pipe(
                 prompt=req.prompt,
                 height=h, width=w,
@@ -93,6 +99,7 @@ def worker():
                 num_inference_steps=req.steps,
                 seed=req.seed,
                 progress_bar_cmd=make_pbar(job_id),
+                **kwargs,
             )
             final = os.path.join(OUT_DIR, f"{job_id}.mp4")
             write_video_audio(video=video, audio=audio, output_path=final,

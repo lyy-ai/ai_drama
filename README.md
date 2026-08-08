@@ -70,9 +70,28 @@ curl -X POST "http://36.212.51.4:10046/api/projects/{pid}/shots/1/2/regen?stage=
 | 用途 | 环境 |
 |---|---|
 | LLM / 视频服务 / 后端 | 复用 `/data/liyangyang/qwen35_env`（已含 vllm/torch2.11） |
-| ComfyUI | 独立 venv `services/comfyui/venv`（torch 2.13+cu13） |
-| CosyVoice | 独立 venv `services/tts/venv`（torch 2.13+cu13，需 `setuptools<81` 提供 pkg_resources） |
+| ComfyUI | 源码已 vendored 于 `services/comfyui/ComfyUI`，venv 用 `scripts/setup_env.sh` 重建 |
+| CosyVoice | 源码已 vendored 于 `services/tts/CosyVoice`，venv 同上（`setuptools<81` 已固定在 requirements 中） |
 | 前端 | node18 + vite 构建，python http.server 托管 dist |
+
+### 全新克隆后的初始化
+
+```bash
+git clone git@github.com:lyy-ai/ai_drama.git /data/liyangyang/ai_drama
+
+# 1. 重建 services 的两个 venv（torch 2.13+cu13 等大包，耗时较长）
+bash /data/liyangyang/ai_drama/scripts/setup_env.sh
+
+# 2. 构建前端
+cd /data/liyangyang/ai_drama/frontend && npm install && npm run build
+
+# 3. 模型文件按 ModelScope 下载到 /data/liyangyang/models/（见下）
+
+# 4. 启动
+bash /data/liyangyang/ai_drama/scripts/start_all.sh
+```
+
+> venv 不入库（单文件超 GitHub 100MB 限制且路径写死）；`requirements.txt` 已锁定全部依赖版本，重建结果与原环境一致。
 
 模型：`/data/liyangyang/models/` 下 `Wan2.1-T2V-1.3B`、`sdxl`、`CosyVoice-300M-SFT`、`Qwen3.5-9B`，全部经 ModelScope 下载。
 

@@ -16,9 +16,10 @@ output/
 backend/data/
 *.log
 
-# 第三方克隆仓库（需按 README 重新 clone，勿提交）
-services/comfyui/ComfyUI/
-services/tts/CosyVoice/
+# ComfyUI 运行时产物
+services/comfyui/ComfyUI/output/
+services/comfyui/ComfyUI/input/
+services/comfyui/ComfyUI/user/
 
 # 系统文件
 .DS_Store

@@ -54,6 +54,8 @@ def load_pipe():
         "computation_device": "cuda",
     }
     free_gb = torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3)
+    # GPU0 有其他租户且用量波动，显存上限取保守值，为外部波动预留余量
+    vram_limit = max(min(free_gb - 6, 10), 4)
     pipe = MiniMaxH3Pipeline.from_pretrained(
         torch_dtype=torch.bfloat16,
         device="cuda",
@@ -64,7 +66,7 @@ def load_pipe():
             ModelConfig(path=f"{MODEL_DIR}/audio_vae_nf4.safetensors", **vram_config),
         ],
         processor_config=ModelConfig(path=f"{BASE_DIR}/FL2VA/processor"),
-        vram_limit=max(free_gb - 4, 4),
+        vram_limit=vram_limit,
     )
     model_ready.set()
 
@@ -77,40 +79,56 @@ def make_pbar(job_id):
     return pbar
 
 
-def worker():
+def run_job(job_id, req):
+    from PIL import Image
     from diffsynth.utils.data.audio_video import write_video_audio
+    w, h = (int(x) for x in req.size.replace("x", "*").split("*"))
+    frames = snap_frames(req.frame_num)
+    jobs[job_id]["total_steps"] = req.steps
+    kwargs = {}
+    if req.keyframe and os.path.exists(req.keyframe):
+        kwargs["keyframes"] = [Image.open(req.keyframe)]
+        kwargs["keyframe_indices"] = [0]
+    video, audio = pipe(
+        prompt=req.prompt,
+        height=h, width=w,
+        num_frames=frames,
+        num_inference_steps=req.steps,
+        seed=req.seed,
+        progress_bar_cmd=make_pbar(job_id),
+        **kwargs,
+    )
+    final = os.path.join(OUT_DIR, f"{job_id}.mp4")
+    write_video_audio(video=video, audio=audio, output_path=final,
+                      fps=FPS, audio_sample_rate=32000)
+
+
+def worker():
     while True:
         job_id, req = job_queue.get()
         model_ready.wait()
         jobs[job_id].update(status="running", started=time.time())
-        try:
-            w, h = (int(x) for x in req.size.replace("x", "*").split("*"))
-            frames = snap_frames(req.frame_num)
-            jobs[job_id]["total_steps"] = req.steps
-            kwargs = {}
-            if req.keyframe and os.path.exists(req.keyframe):
-                from PIL import Image
-                kwargs["keyframes"] = [Image.open(req.keyframe)]
-                kwargs["keyframe_indices"] = [0]
-            video, audio = pipe(
-                prompt=req.prompt,
-                height=h, width=w,
-                num_frames=frames,
-                num_inference_steps=req.steps,
-                seed=req.seed,
-                progress_bar_cmd=make_pbar(job_id),
-                **kwargs,
-            )
-            final = os.path.join(OUT_DIR, f"{job_id}.mp4")
-            write_video_audio(video=video, audio=audio, output_path=final,
-                              fps=FPS, audio_sample_rate=32000)
+        err = None
+        for attempt in range(2):
+            try:
+                run_job(job_id, req)
+                err = None
+                break
+            except Exception:
+                err = traceback.format_exc()[-1500:]
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                time.sleep(10)
+        if err is None:
             jobs[job_id].update(status="done", video=f"video_clips/{job_id}.mp4",
                                 elapsed=time.time() - jobs[job_id]["started"])
-        except Exception:
-            jobs[job_id].update(status="failed", error=traceback.format_exc()[-1500:])
-        finally:
-            jobs[job_id].pop("step", None)
-            job_queue.task_done()
+        else:
+            jobs[job_id].update(status="failed", error=err)
+        jobs[job_id].pop("step", None)
+        job_queue.task_done()
 
 
 @app.on_event("startup")

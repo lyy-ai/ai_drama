@@ -28,10 +28,10 @@ start_comfy() {
 }
 
 start_video() {
-  echo "[start] Wan2.1 视频服务 127.0.0.1:10050 (生成跑在 GPU0)"
+  echo "[start] MiniMax-H3 视频服务 127.0.0.1:10050 (生成跑在 GPU0)"
   cd $ROOT/services/video
-  setsid env PATH=$QWEN_ENV/bin:/usr/bin:/bin \
-    $QWEN_ENV/bin/uvicorn server:app --host 127.0.0.1 --port 10050 \
+  setsid env CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    $ROOT/services/video/venv/bin/uvicorn server:app --host 127.0.0.1 --port 10050 \
     > $LOGS/video_service.log 2>&1 < /dev/null &
 }
 

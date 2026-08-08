@@ -84,7 +84,7 @@ async def comfy_txt2img(prompt_en: str, seed: int, prefix: str, timeout: float =
 
 
 async def video_generate(prompt: str, job_id: str, seed: int = 42, size: str = "480*832",
-                         frame_num: int = 65, timeout: float = 1800.0, progress_cb=None):
+                         frame_num: int = 65, timeout: float = 3600.0, progress_cb=None):
     async with httpx.AsyncClient(timeout=60) as cli:
         r = await cli.post(f"{VIDEO_URL}/generate", json={
             "prompt": prompt, "job_id": job_id, "seed": seed,

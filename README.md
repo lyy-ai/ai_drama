@@ -13,13 +13,13 @@
 | 10047 | ComfyUI (SDXL) | 127.0.0.1 | 角色定妆照 + 分镜首帧（GPU1） |
 | 10048 | vLLM Qwen3.5-9B | 127.0.0.1 | 剧本生成（GPU1，常驻 ~21G） |
 | 10049 | CosyVoice-300M-SFT | 127.0.0.1 | 多音色配音（GPU1） |
-| 10050 | Wan2.1 T2V-1.3B | 127.0.0.1 | 视频片段生成（**GPU0**，错峰） |
+| 10050 | MiniMax-H3 (NF4) | 127.0.0.1 | 视频片段生成，音画同步（**GPU0**，显存自动管理，最低 8G） |
 
 > 仅 10045/10046 对公网开放；10047-10050 仅本机内部调用（无鉴权，勿对外映射）。
 
 ## 流水线
 
-梗概 → S0 LLM 结构化剧本(JSON) → S1 SDXL 角色定妆照 → S2 SDXL 分镜首帧 → S3 CosyVoice 台词配音 → S4 Wan2.1 视频片段 → S5 FFmpeg 音画对齐/字幕/拼接 → 成片
+梗概 → S0 LLM 结构化剧本(JSON) → S1 SDXL 角色定妆照 → S2 SDXL 分镜首帧 → S3 CosyVoice 台词配音 → S4 MiniMax-H3 视频片段 → S5 FFmpeg 音画对齐/字幕/拼接 → 成片
 
 - 剧本生成后可人工编辑（台词/提示词/角色音色），也可全自动一键出片
 - 支持单镜头重生成（重绘图 / 重视频 / 重配音）、断点续跑
@@ -62,7 +62,7 @@ curl -X POST "http://36.212.51.4:10046/api/projects/{pid}/shots/1/2/regen?stage=
 | 剧本（1集6镜头） | ~1-2 分钟 |
 | 角色/分镜图（每张） | ~10 秒 |
 | 配音（每句） | ~5 秒 |
-| 视频片段（每个 4s/65帧/50步） | ~8-9 分钟（GPU0 共享） |
+| 视频片段（每个 ~3.8s/90帧/50步） | 视显存余量 ~15-30 分钟（disk offload） |
 | 1 集 6 镜头成片 | ~1 小时 |
 
 ## 环境说明（均未污染外部）
@@ -93,13 +93,13 @@ bash /data/liyangyang/ai_drama/scripts/start_all.sh
 
 > venv 不入库（单文件超 GitHub 100MB 限制且路径写死）；`requirements.txt` 已锁定全部依赖版本，重建结果与原环境一致。
 
-模型：`/data/liyangyang/models/` 下 `Wan2.1-T2V-1.3B`、`sdxl`、`CosyVoice-300M-SFT`、`Qwen3.5-9B`，全部经 ModelScope 下载。
+模型：`/data/liyangyang/models/` 下 `MiniMax-H3-NF4`（视频，FL2VA 四件套）、`MiniMax-H3`（仅 FL2VA/processor 配置）、`sdxl`、`CosyVoice-300M-SFT`、`Qwen3-0.6B`，全部经 ModelScope 下载。旧 `Wan2.1-T2V-1.3B` 已下线（服务备份为 `services/video/server_wan21.py`）。
 
 ## 已知注意事项
 
 1. **GPU 显存分配**：GPU1 被 vLLM 常驻占 21G，ComfyUI/CosyVoice 按需加载（各 ~5-8G）可与 vLLM 共存；Wan2.1 峰值 ~10G 安排在 GPU0（与 veyforge/isaac 错峰，余量 14G）。若 GPU0 被占满，需把 video 服务 env 改回 GPU1 并先停 ComfyUI。
 2. **vLLM 启动参数**：`VLLM_USE_FLASHINFER_SAMPLER=0`（flashinfer 与 CUDA13 cub 编译冲突）、`--enforce-eager`（省显存）、`LD_LIBRARY_PATH` 指向 nvidia/cu13/lib。
-3. **Wan2.1 flash_attn 补丁**：项目使用 SDPA 回退（见 `/data/liyangyang/Wan2.1/DEPLOY.md`）。
+3. **MiniMax-H3 推理**：DiffSynth-Studio（PyPI `diffsynth==2.1.0`）+ bitsandbytes NF4，disk offload，帧数自动对齐 17n+5、24fps 出片；mp4 自带音轨在 S5 被丢弃，仍用 CosyVoice 配音。
 4. CosyVoice2-0.5B 无内置音色，本平台改用 CosyVoice-300M-SFT（内置 中文男/中文女 等 7 个音色）。
 5. 中文字幕依赖系统字体 Droid Sans Fallback（已装）。
 
